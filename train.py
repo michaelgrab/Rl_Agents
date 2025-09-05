@@ -4,6 +4,16 @@ import json
 from models.value_based import DQNModel, DoubleDQNModel
 from models.policy_based import PolicyGradientAgent
 from models.actor_critic import A2CModel, AdversarialA2CModel
+from models.ppo import PPOAgent
+
+import re
+
+def strip_comments(json_str):
+    # Remove single-line comments
+    json_str = re.sub(r'//.*?\n', '\n', json_str)
+    # Remove multi-line comments
+    json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
+    return json_str
 
 def create_agent(config: dict):
     """Create agent based on config."""
@@ -21,6 +31,8 @@ def create_agent(config: dict):
 
     elif agent_type == "adversarial_a2c":
         return AdversarialA2CModel(config)
+    elif agent_type == "ppo":
+        return PPOAgent(config)
     else:
         available_types = ["dqn", "ddqn", "rainbow", "policy_gradient", "a2c", "a3c", "adversarial_a2c"]
         print(f"Error: Unknown agent type '{agent_type}'")
@@ -31,7 +43,9 @@ def main():
     config_file = sys.argv[1]
     try:
         with open(config_file, 'r') as f:
-            config = json.load(f)
+            content = f.read()
+            cleaned_content = strip_comments(content)
+            config = json.loads(cleaned_content)
     except FileNotFoundError:
         print(f"Error: Config file '{config_file}' not found.")
         sys.exit(1)

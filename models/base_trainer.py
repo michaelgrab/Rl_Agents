@@ -2,37 +2,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
 import os
 import shutil
 from typing import Any, Dict, List, Tuple, Optional
 from abc import abstractmethod
-from .model import BaseAgent
+from .model import DeepAgent
 
-class BaseTrainer(BaseAgent):
+class BaseTrainer(DeepAgent):
     """
     Base trainer class that handles common training patterns.
     """
     def __init__(self, config: Dict[str, Any]) -> None:
-        self.config = config
-        self.env_cfg = config["env"]
-        self.train_cfg = config["train"]
-        self.model_cfg = config.get("model", {})
-        
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.gamma = self.train_cfg.get("gamma", 0.99)
-        self.episode = 0
-        
-        self._setup_environment()
-        
-        experiment_name = f"{self.get_algorithm_name()}_{self.env_cfg['id']}"
-        self._setup_experiment_logging(experiment_name)
-        
-    @abstractmethod
-    def get_algorithm_name(self) -> str:
-        """Get algorithm name for logging."""
-        pass
-    
+        super().__init__(config)
+
     @abstractmethod
     def run_episode(self, episode: int, render_every: int) -> Tuple[float, int, List[float]]:
         """Run single episode and return (reward, steps, losses)."""
@@ -49,11 +31,7 @@ class BaseTrainer(BaseAgent):
         render_every = self.train_cfg.get("render_every", 0)
         stats_window = int(self.train_cfg.get("stats_window", 100))
 
-        print(f"Training {self.get_algorithm_name()} on {self.env_cfg['id']}")
-        print(f"Device: {self.device} | Episodes: {num_episodes}")
-        if hasattr(self, 'writer'):
-            print(f"Log dir: {self.writer.log_dir}")
-        print("=" * 60)
+        self.print_start_info(num_episodes)
 
         recent_rewards = []
         best_reward = float("-inf")
@@ -110,37 +88,6 @@ class BaseTrainer(BaseAgent):
         """Print episode progress."""
         print(f"Ep {episode:4d} | R {reward:8.2f} | steps {steps:5d} | loss {loss:7.4f} | avg {rolling_avg:6.2f}")
 
-    def save_networks_and_optimizers(self, networks: Dict[str, torch.nn.Module], 
-                                   optimizers: Dict[str, torch.optim.Optimizer],
-                                   additional_data: Optional[Dict[str, Any]] = None) -> None:
-        self.save_agent(self.get_checkpoint_path(), networks, optimizers, additional_data)
-
-    def load_networks_and_optimizers(self, network_names: List[str], optimizer_names: List[str]) -> None:
-        self.load_agent(self.get_checkpoint_path(), network_names, optimizer_names)
-
-    def get_checkpoint_path(self, episode: Optional[int] = None) -> str:
-        if episode is None:
-            episode = self.episode
-        return os.path.join(
-            self.experiment_logger.checkpoints_dir,
-            f"checkpoint_ep_{episode}.pth"
-        )
-
-    def _setup_experiment_logging(self, experiment_name: str) -> None:
-        """Setup experiment logging infrastructure."""
-        from games.experiment_logger import ExperimentLogger
-        
-        self.experiment_logger = ExperimentLogger(
-            experiment_name=experiment_name,
-            base_dir=self.train_cfg.get("experiments_dir", "experiments")
-        )
-        
-        logdir = os.path.join(self.experiment_logger.experiment_dir, "tensorboard")
-        os.makedirs(logdir, exist_ok=True)
-        self.writer = SummaryWriter(log_dir=logdir)
-        
-        self.experiment_logger.log_config(self.config)
-
     def _log_episode_stats(self, episode: int, **kwargs) -> None:
         base_episode_data = {
             'episode': episode,
@@ -169,11 +116,6 @@ class BaseTrainer(BaseAgent):
             )
         else:
             return optim.Adam(network.parameters(), lr=lr)
-
-    def _apply_gradient_clipping(self, network: nn.Module) -> None:
-        """Apply gradient clipping to prevent exploding gradients."""
-        grad_clip = self.train_cfg.get("gradient_clip", 10.0)
-        torch.nn.utils.clip_grad_norm_(network.parameters(), grad_clip)
 
     def _to_tensor(self, data, dtype=None) -> torch.Tensor:
         """Convert numpy array or list to tensor on correct device."""
@@ -331,14 +273,6 @@ class BaseTrainer(BaseAgent):
             render_mode = "human" if render_enabled else None
             self.env = gym.make(env_id, render_mode=render_mode)
             self.is_atari_env = False
-
-    def cleanup(self) -> None:
-        if hasattr(self, 'writer'):
-            self.writer.close()
-        if hasattr(self, 'env'):
-            self.env.close()
-        if hasattr(self, 'game'):
-            self.game.close()
 
     @abstractmethod
     def _get_eval_action(self, state) -> int:

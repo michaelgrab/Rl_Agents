@@ -1,0 +1,27 @@
+{
+  "agent_type": "ppo",
+  "env": {
+    "id": "CartPole-v1",
+    "kwargs": {},
+    "num_env": 4,
+    "seed": 42
+  },
+  "train": {
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "num_steps": 1000, //steps per env executed in one episode
+    "total_steps": 25000,
+    "max_episode_length": 500,
+    "value_loss_coeff": 0.5,
+    "entropy_coeff": 0.01,
+    "gradient_clip": 10.0,
+    "render_every": 1,
+    "save_every": 100,
+    "stats_window": 100,
+    "experiments_dir": "experiments"
+  },
+  "model": {
+    "hidden_dim": 128,
+    "shared_network": true
+  }
+}

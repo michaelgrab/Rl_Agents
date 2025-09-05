@@ -111,8 +111,9 @@ class ActorCriticModel(BaseTrainer):
         current_state = None 
         
         while True:
+            # ROLLOUT PHASE
             trajectory = self._collect_trajectories(self.n_steps, render=render_this, initial_state=current_state)
-            
+            # LEARNING PHASE
             loss_dict = self._update_networks(trajectory)
             episode_losses.append(sum(loss_dict.values()))
             

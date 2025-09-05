@@ -113,6 +113,7 @@ class A2CModel(ActorCriticModel):
         
         returns, advantages = self._compute_advantages(rewards, values, next_value)
         
+        # Advantage normalization
         if len(advantages) > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         
