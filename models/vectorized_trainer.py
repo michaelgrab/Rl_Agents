@@ -4,6 +4,7 @@ import gymnasium as gym
 from gymnasium.vector import SyncVectorEnv
 from gymnasium.wrappers import RecordVideo
 from gymnasium.wrappers import RecordEpisodeStatistics
+from abc import abstractmethod
 
 import os
 from .model import DeepAgent
@@ -16,6 +17,10 @@ class VectorizedTrainer(DeepAgent):
     """
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
+
+    @abstractmethod
+    def training_loop(self):
+        pass
     
     def _setup_environment(self):
         """Setup vectorized environment based on configuration """
@@ -50,45 +55,19 @@ class VectorizedTrainer(DeepAgent):
         )
 
     def train(self) -> None:
-        """Generic training loop for vectorized environments."""
+        """training in a vectorized environment."""
         # setup variables needed for training
         self.num_steps = self.train_cfg.get("num_steps", 1000)
-        total_steps = self.train_cfg.get("total_steps", 10e4)
-        save_every = self.train_cfg.get("save_every", 100)
-        render_every = self.train_cfg.get("render_every", 0)
+        self.total_steps = self.train_cfg.get("total_steps", 10e4)
+        self.save_every = self.train_cfg.get("save_every", 100)
 
-        num_episodes = total_steps // (self.num_steps * self.num_env)
+        self.num_episodes = self.total_steps // (self.num_steps * self.num_env)
         self.steps_done = 0
 
-        self.print_start_info(num_episodes)
+        self.print_start_info(self.num_episodes)
 
-        next_obs, _ = self.env.reset()
-        next_done = np.zeros(self.num_env)
-
-        for ep in range(num_episodes):
-            episode_reward, episode_steps, episode_losses = self.run_episode(ep, render_every)
-            
-
-
-            for step in range(self.num_steps):
-                # s_t = s_t+1
-                obs = next_obs
-                done = next_done
-                action = self.env.action_space.sample()
-                next_obs, reward, next_terminated, next_truncated = self.env.step(action)
-                next_done = np.logical_or(next_terminated, next_truncated)
-                # here you should append to the buffer            
-
-                # saving model weights
-                if save_every and ep > 0 and ep % save_every == 0:
-                    checkpoint_path = os.path.join(
-                        self.experiment_logger.checkpoints_dir, 
-                        f"checkpoint_ep_{ep}.pth"
-                    )
-                    self.save(checkpoint_path)
-            
-            self.episode += 1
-            self.steps_done += self.num_steps
+        self.training_loop()
 
         self.cleanup()
+
 
