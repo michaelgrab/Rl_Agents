@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import os
 import shutil
 from typing import Any, Dict, List, Tuple, Optional
@@ -96,26 +95,6 @@ class BaseTrainer(DeepAgent):
         }
         base_episode_data.update(kwargs)
         self.experiment_logger.log_episode(base_episode_data)
-
-    def _setup_optimizer(self, network: nn.Module, lr: Optional[float] = None) -> torch.optim.Optimizer:
-        """Setup optimizer for the given network."""
-        if lr is None:
-            lr = self.train_cfg.get("learning_rate", 2.5e-4)
-            
-        if self.train_cfg.get("use_rmsprop", False):
-            alpha = self.train_cfg.get("rmsprop_alpha", 0.95)
-            momentum = self.train_cfg.get("rmsprop_momentum", 0.95)
-            eps = self.train_cfg.get("rmsprop_eps", 0.01)
-            
-            return optim.RMSprop(
-                network.parameters(),
-                lr=lr,
-                alpha=alpha,
-                momentum=momentum,
-                eps=eps
-            )
-        else:
-            return optim.Adam(network.parameters(), lr=lr)
 
     def _to_tensor(self, data, dtype=None) -> torch.Tensor:
         """Convert numpy array or list to tensor on correct device."""

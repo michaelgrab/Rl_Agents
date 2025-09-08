@@ -36,7 +36,10 @@ class VectorizedTrainer(DeepAgent):
 
         def make_env(index):
             def helper():
-                env = gym.make(env_id)
+                if index == 0 and capture_video:
+                    env = gym.make(env_id, render_mode="rgb_array")
+                else:
+                    env = gym.make(env_id)
                 # Record statistics (reward, length, etc.)
                 env = RecordEpisodeStatistics(env)
                 if index == 0 and capture_video:

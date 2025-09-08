@@ -4,7 +4,8 @@
     "id": "CartPole-v1",
     "kwargs": {},
     "num_env": 4,
-    "seed": 42
+    "seed": 42,
+    "render_every": 1 // moved to env config
   },
   "train": {
     "learning_rate": 0.0003,
@@ -15,7 +16,6 @@
     "value_loss_coeff": 0.5,
     "entropy_coeff": 0.01,
     "gradient_clip": 10.0,
-    "render_every": 1,
     "save_every": 100,
     "stats_window": 100,
     "experiments_dir": "experiments"

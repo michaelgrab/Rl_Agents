@@ -69,6 +69,8 @@ class PPOAgent(VectorizedTrainer):
         super().__init__(config)
 
         self.network = PPOSeparateFC(self.env)
+        lr = self.train_cfg.get("learning_rate", 3e-4)
+        self.optimizer = self._setup_optimizer(self.network, lr)
     
     def get_algorithm_name(self):
         return "ppo"
@@ -110,7 +112,7 @@ class PPOAgent(VectorizedTrainer):
             step = self.steps_done
             for reward, length in zip(rewards, lengths):
                 print(f"Steps {step:4d} | reward {reward:8.2f} | length {length:4d}")
-      
+
     def _get_eval_action(self, state):
         return super()._get_eval_action(state)
     

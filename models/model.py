@@ -3,6 +3,7 @@ from typing import Any, Dict, Tuple, Optional, List
 import torch
 from torch import nn as nn
 from torch.utils.tensorboard import SummaryWriter
+import torch.optim as optim
 
 import os
 
@@ -115,5 +116,25 @@ class DeepAgent(BaseAgent):
         if hasattr(self, 'writer'):
             print(f"Log dir: {self.writer.log_dir}")
         print("=" * 60)
+
+    def _setup_optimizer(self, network: nn.Module, lr: Optional[float] = None) -> torch.optim.Optimizer:
+        """Setup optimizer for the given network."""
+        if lr is None:
+            lr = self.train_cfg.get("learning_rate", 2.5e-4)
+            
+        if self.train_cfg.get("use_rmsprop", False):
+            alpha = self.train_cfg.get("rmsprop_alpha", 0.95)
+            momentum = self.train_cfg.get("rmsprop_momentum", 0.95)
+            eps = self.train_cfg.get("rmsprop_eps", 0.01)
+            
+            return optim.RMSprop(
+                network.parameters(),
+                lr=lr,
+                alpha=alpha,
+                momentum=momentum,
+                eps=eps
+            )
+        else:
+            return optim.Adam(network.parameters(), lr=lr)    
 
         
