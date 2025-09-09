@@ -1,6 +1,7 @@
 import numpy as np
 from gymnasium import Env
 import torch
+from typing import Tuple
 
 class TrajectoryBuffer:
     """a buffer for reinforcement learing algorithms,
@@ -10,19 +11,72 @@ class TrajectoryBuffer:
 
     def __init__(self, length: int, env: Env, num_env: int=1, device="cpu") -> None:
         self.device = device
+        self.length = length
+        self.num_env = num_env
+        self.env = env
+        self.indicies = np.arange(self.length)
         self.observations = torch.zeros((length, num_env) + env.observation_space.shape).to(device)
         self.actions = torch.zeros((length, num_env)).to(device)
         self.rewards = torch.zeros((length, num_env)).to(device)
         self.dones = torch.zeros((length, num_env)).to(device)
         self.logprobs = torch.zeros((length, num_env)).to(device)
         self.values = torch.zeros((length, num_env)).to(device)
+        self.advantages = torch.zeros((length, num_env)).to(device)
+        self.returns = torch.zeros((length, num_env)).to(device)
 
     def append(self, step, obs, act, rew, done, logprob=None, value=None) -> None:
-        self.observations[step] = torch.Tensor(obs).to(self.device)
-        self.actions[step] = torch.Tensor(act).to(self.device)
-        self.rewards[step] = torch.Tensor(rew).to(self.device)
-        self.dones[step] = torch.Tensor(done).to(self.device)
+        self.observations[step] = self._to_tensor(obs, dtype=torch.float)
+        self.actions[step] = self._to_tensor(act, dtype=torch.long)
+        self.rewards[step] = self._to_tensor(rew, dtype=torch.float)
+        self.dones[step] = self._to_tensor(done, dtype=torch.float)
         if logprob is not None:
-            self.logprobs[logprob] = torch.Tensor(obs).to(self.device)
+            self.logprobs[step] = self._to_tensor(logprob, dtype=torch.float)
         if value is not None:
-            self.values[value] = torch.Tensor(obs).to(self.device)
+            self.values[step] = self._to_tensor(value, dtype=torch.float)
+    
+    def gae_estimation(self, gamma: float, gae_lambda: float, next_value, next_done):
+        next_value = self._to_tensor(next_value, dtype=torch.float)
+        next_done = self._to_tensor(next_done, dtype=torch.float)
+        with torch.no_grad():
+            lastgae = 0
+            for t in reversed(range(self.length)):
+                if t == self.length - 1:
+                    termination_mask = 1.0 - next_done 
+                    bootstrap_value = next_value
+                else:
+                    termination_mask = 1.0 - self.dones[t]
+                    bootstrap_value = self.values[t+1]
+
+                delta = self.rewards[t] + gamma * bootstrap_value * termination_mask - self.values[t]
+                self.advantages[t] = lastgae = delta + gamma * gae_lambda * termination_mask * lastgae
+        self.returns = self.advantages + self.values 
+
+    def _to_tensor(self, data, dtype=None) -> torch.Tensor:
+        """Convert numpy array or list to tensor on correct device."""
+        if isinstance(data, np.ndarray):
+            tensor = torch.from_numpy(data)
+        elif not isinstance(data, torch.Tensor):
+            tensor = torch.tensor(data)
+        else:
+            tensor = data    
+        if dtype is not None:
+            tensor = tensor.to(dtype)
+            
+        return tensor.to(self.device)
+    
+    def get_batches(self, minibatch_size=100):
+        """
+        generator function that fetches randomly minibatch of taining data
+        """
+        b_obs = self.observations.reshape((-1,) + self.env.single_observation_space.shape)
+        b_logprobs = self.logprobs.reshape(-1)
+        b_actions = self.actions.reshape((-1,) + self.env.single_action_space.shape)
+        b_advantages = self.advantages.reshape(-1)
+        b_returns = self.returns.reshape(-1)
+        b_values = self.values.reshape(-1)
+        # using numpy to randomly shuffle batch indecies
+        np.random.shuffle(self.indicies)
+        for start in range(0, self.length, minibatch_size):
+            end = start + minibatch_size
+            mb_ind = self.indicies[start:end]
+            yield b_obs[mb_ind], b_logprobs[mb_ind], b_actions[mb_ind], b_advantages[mb_ind], b_returns[mb_ind], b_values[mb_ind]

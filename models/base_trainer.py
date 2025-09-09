@@ -96,18 +96,6 @@ class BaseTrainer(DeepAgent):
         base_episode_data.update(kwargs)
         self.experiment_logger.log_episode(base_episode_data)
 
-    def _to_tensor(self, data, dtype=None) -> torch.Tensor:
-        """Convert numpy array or list to tensor on correct device."""
-        if isinstance(data, np.ndarray):
-            tensor = torch.from_numpy(data)
-        else:
-            tensor = torch.tensor(data)
-            
-        if dtype is not None:
-            tensor = tensor.to(dtype)
-            
-        return tensor.to(self.device)
-
     def save_agent(self, path: str, networks: Dict[str, nn.Module], 
                    optimizers: Dict[str, torch.optim.Optimizer], 
                    additional_data: Optional[Dict[str, Any]] = None) -> None:

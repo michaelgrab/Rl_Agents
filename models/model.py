@@ -4,6 +4,7 @@ import torch
 from torch import nn as nn
 from torch.utils.tensorboard import SummaryWriter
 import torch.optim as optim
+import numpy as np
 
 import os
 
@@ -136,5 +137,18 @@ class DeepAgent(BaseAgent):
             )
         else:
             return optim.Adam(network.parameters(), lr=lr)    
+        
+    def _to_tensor(self, data, dtype=None) -> torch.Tensor:
+        """Convert numpy array or list to tensor on correct device."""
+        if isinstance(data, np.ndarray):
+            tensor = torch.from_numpy(data)
+        else:
+            tensor = torch.tensor(data)
+            
+        if dtype is not None:
+            tensor = tensor.to(dtype)
+            
+        return tensor.to(self.device)
+
 
         

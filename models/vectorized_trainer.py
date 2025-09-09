@@ -47,7 +47,7 @@ class VectorizedTrainer(DeepAgent):
                         env,
                         video_folder=video_dir, 
                         name_prefix=self.experiment_logger.experiment_name,
-                        episode_trigger=lambda x: x % render_every == 0
+                        episode_trigger=lambda x: x % render_every == 0 and x > 0
                     )
                 return env
             return helper
