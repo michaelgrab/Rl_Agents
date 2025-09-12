@@ -84,7 +84,8 @@ class PPOAgent(VectorizedTrainer):
     def training_loop(self):
         next_obs, _ = self.env.reset()
         next_done = np.zeros(self.num_env)
-        self.trajectory_buffer = TrajectoryBuffer(self.num_steps, self.env, self.num_env)
+        minibatch_number = self.train_cfg.get("mb_num", 4)
+        self.trajectory_buffer = TrajectoryBuffer(self.num_steps, self.env, minibatch_number, self.device)
         gamma = self.train_cfg.get("gamma", 0.99)
         gae_lambda = self.train_cfg.get("lambda", 0.95)
 
@@ -128,7 +129,7 @@ class PPOAgent(VectorizedTrainer):
         vf_coef = self.train_cfg.get("vf_coef", 0.5)
 
         for step in range(lr_steps):
-            training_data = self.trajectory_buffer.get_batches(mb_size)
+            training_data = self.trajectory_buffer.get_batches()
             for b_obs, b_logprobs, b_actions, b_advantages, b_returns, b_values in training_data:
                 _, new_logprob, new_value, entropy = self.act_and_value(b_obs, b_actions)
                 # CALCULATE PROBABILITY RATIO

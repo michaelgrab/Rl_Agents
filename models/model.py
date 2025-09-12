@@ -104,6 +104,7 @@ class DeepAgent(BaseAgent):
         torch.nn.utils.clip_grad_norm_(network.parameters(), grad_clip)
 
     def cleanup(self) -> None:
+        print("cleanup called")
         if hasattr(self, 'writer'):
             self.writer.close()
         if hasattr(self, 'env'):

@@ -1,28 +1,29 @@
 import numpy as np
-from gymnasium import Env
+from gymnasium.vector import VectorEnv
 import torch
 from typing import Tuple
 
 class TrajectoryBuffer:
     """a buffer for reinforcement learing algorithms,
     that stores fixed length trajectory segments and
-    loads them to the device specified
+    loads them to the device specified, compatible with vectorized env
     """
 
-    def __init__(self, length: int, env: Env, num_env: int=1, device="cpu") -> None:
+    def __init__(self, length: int, env: VectorEnv, num_minibatches: int=10, device="cpu") -> None:
         self.device = device
         self.length = length
-        self.num_env = num_env
         self.env = env
-        self.indicies = np.arange(self.length)
-        self.observations = torch.zeros((length, num_env) + env.observation_space.shape).to(device)
-        self.actions = torch.zeros((length, num_env)).to(device)
-        self.rewards = torch.zeros((length, num_env)).to(device)
-        self.dones = torch.zeros((length, num_env)).to(device)
-        self.logprobs = torch.zeros((length, num_env)).to(device)
-        self.values = torch.zeros((length, num_env)).to(device)
-        self.advantages = torch.zeros((length, num_env)).to(device)
-        self.returns = torch.zeros((length, num_env)).to(device)
+        self.num_env = env.num_envs
+        self.indicies = np.arange(self.length * self.num_env)
+        self.mb_length = self.length * self.num_env // num_minibatches
+        self.observations = torch.zeros((length, self.num_env) + env.single_observation_space.shape).to(device)
+        self.actions = torch.zeros((length, self.num_env)).to(device)
+        self.rewards = torch.zeros((length, self.num_env)).to(device)
+        self.dones = torch.zeros((length, self.num_env)).to(device)
+        self.logprobs = torch.zeros((length, self.num_env)).to(device)
+        self.values = torch.zeros((length, self.num_env)).to(device)
+        self.advantages = torch.zeros((length, self.num_env)).to(device)
+        self.returns = torch.zeros((length, self.num_env)).to(device)
 
     def append(self, step, obs, act, rew, done, logprob=None, value=None) -> None:
         self.observations[step] = self._to_tensor(obs, dtype=torch.float)
@@ -59,12 +60,12 @@ class TrajectoryBuffer:
             tensor = torch.tensor(data)
         else:
             tensor = data    
-        if dtype is not None:
+        if dtype is not None and data.dtype is not dtype:
             tensor = tensor.to(dtype)
             
         return tensor.to(self.device)
     
-    def get_batches(self, minibatch_size=100):
+    def get_batches(self):
         """
         generator function that fetches randomly minibatch of taining data
         """
@@ -76,7 +77,7 @@ class TrajectoryBuffer:
         b_values = self.values.reshape(-1)
         # using numpy to randomly shuffle batch indecies
         np.random.shuffle(self.indicies)
-        for start in range(0, self.length, minibatch_size):
-            end = start + minibatch_size
+        for start in range(0, self.length, self.mb_length):
+            end = start + self.mb_length
             mb_ind = self.indicies[start:end]
             yield b_obs[mb_ind], b_logprobs[mb_ind], b_actions[mb_ind], b_advantages[mb_ind], b_returns[mb_ind], b_values[mb_ind]
