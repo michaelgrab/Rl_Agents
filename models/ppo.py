@@ -2,7 +2,7 @@ from models.vectorized_trainer import VectorizedTrainer
 from games.trajectory_buffer import TrajectoryBuffer
 from .network import FCNetwork
 
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple
 import numpy as np
 import os
 import torch
@@ -89,7 +89,7 @@ class PPOAgent(VectorizedTrainer):
         gamma = self.train_cfg.get("gamma", 0.99)
         gae_lambda = self.train_cfg.get("lambda", 0.95)
 
-        for ep in range(self.num_episodes):
+        for update in range(self.num_episodes):
             # here add learning rate annealing
             for step in range(self.num_steps):
                 # s_t = s_t+1
@@ -102,14 +102,7 @@ class PPOAgent(VectorizedTrainer):
 
                 self.trajectory_buffer.append(step, obs, action, reward, done, logprob, value)
                 
-                # saving model weights
-                if self.save_every and ep > 0 and ep % self.save_every == 0:
-                    checkpoint_path = os.path.join(
-                        self.experiment_logger.checkpoints_dir, 
-                        f"checkpoint_ep_{ep}.pth"
-                    )
-                    # self.save(checkpoint_path)
-                self.print_rollout_info(info)
+                self._update_episode_info(info)
 
                 self.steps_done += self.num_env
             with torch.no_grad():
@@ -119,11 +112,16 @@ class PPOAgent(VectorizedTrainer):
             # Generalized advantage estimation
             self.trajectory_buffer.gae_estimation(gamma, gae_lambda, next_value, next_done)
             self.optimize()
-            self.episode += 1
+            # saving model weights
+            if self.save_every and update > 0 and update % self.save_every == 0:
+                checkpoint_path = os.path.join(
+                    self.experiment_logger.checkpoints_dir, 
+                    f"checkpoint_ep_{self.episode}.pth"
+                )
+                self.save(checkpoint_path)
 
     def optimize(self):
         lr_steps = self.train_cfg.get("lr_steps", 5)
-        mb_size = self.train_cfg.get("minibatch_size", 100)
         clip_coef = self.train_cfg.get("clip_coef", 0.2)
         ent_coef = self.train_cfg.get("ent_coef", 0.01)
         vf_coef = self.train_cfg.get("vf_coef", 0.5)
@@ -151,26 +149,8 @@ class PPOAgent(VectorizedTrainer):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+                self._log_batch_data(self.episode, loss)
 
-                # print(f"learning step: {step} loss: {loss:4.4f}, p_loss {p_loss:4.4f}, v_loss {v_loss:4.4f}")
-
-
-    def print_rollout_info(self, info: Dict[str, Any]):
-        """Print episode progress."""
-        if "episode" in info:
-            mask = info["_episode"]
-            rewards = info["episode"]["r"][mask]
-            lengths = info["episode"]["l"][mask]
-            step = self.steps_done
-            for reward, length in zip(rewards, lengths):
-                print(f"Steps {step:4d} | reward {reward:8.2f} | length {length:4d}")
-
-    def _get_eval_action(self, state):
-        return super()._get_eval_action(state)
-    
-    def _update_networks(self, trajectory):
-        return super()._update_networks(trajectory)
-    
     def act_and_value(self, state, action: torch.Tensor=None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """select action using current policy, compute the value of the state, compute the entrop
         if provided action calculates logprob
@@ -199,16 +179,21 @@ class PPOAgent(VectorizedTrainer):
         state = self._to_tensor(state, dtype=torch.float)
         return self.network.get_value(state).squeeze(-1)
 
-    
     def act(self, state):
         action, _, _ =self.act_and_value(state)
         return action
     
-    def save(self):
-        pass
+    def save(self, path):
+        """Save PPO checkpoint"""
+        networks = {"network": self.network}
+        optimizers = {"optimizer": self.optimizer}
+        self.save_agent(path, networks, optimizers)
 
-    def load(self):
-        pass
+    def load(self, path):
+        """Load PPO checkpoint"""
+        networks = {"network": self.network}
+        optimizers = {"optimizer": self.optimizer}
+        self.load_agent(path, networks, optimizers)
 
     def evaluate(self):
         pass

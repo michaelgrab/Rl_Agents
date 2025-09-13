@@ -5,6 +5,7 @@ from torch import nn as nn
 from torch.utils.tensorboard import SummaryWriter
 import torch.optim as optim
 import numpy as np
+import shutil
 
 import os
 
@@ -83,6 +84,47 @@ class DeepAgent(BaseAgent):
             f"checkpoint_ep_{episode}.pth"
         )
     
+    def save_agent(self, path: str, networks: Dict[str, nn.Module], 
+                   optimizers: Dict[str, torch.optim.Optimizer], 
+                   additional_data: Optional[Dict[str, Any]] = None) -> None:
+        """Common save pattern for all agents. This method is intended to be run inside agent.save() method"""
+        checkpoint_path = self._save_checkpoint(
+            self.episode, networks, optimizers, additional_data
+        )
+        
+        if path != checkpoint_path:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            shutil.copy2(checkpoint_path, path)
+
+    def load_agent(self, path: str, network_names: List[str], 
+                   optimizer_names: List[str]) -> Dict[str, Any]:
+        """This method is intended to be run inside agent.load() method"""
+        checkpoint = torch.load(path, map_location=self.device)
+        
+        for name in network_names:
+            if hasattr(self, name):
+                network = getattr(self, name)
+                state_dict_key = f"{name}_state_dict"
+                if state_dict_key in checkpoint:
+                    network.load_state_dict(checkpoint[state_dict_key])
+                elif name in checkpoint:
+                    network.load_state_dict(checkpoint[name])
+        
+        for name in optimizer_names:
+            if hasattr(self, name):
+                optimizer = getattr(self, name)
+                optimizer_key = f"{name}_optimizer"
+                if optimizer_key in checkpoint:
+                    optimizer.load_state_dict(checkpoint[optimizer_key])
+                elif name in checkpoint:
+                    optimizer.load_state_dict(checkpoint[name])
+        
+        self.episode = checkpoint.get("episode", 0)
+        if "steps_done" in checkpoint:
+            self.steps_done = checkpoint["steps_done"]
+        
+        return checkpoint
+
     def _setup_experiment_logging(self, experiment_name: str) -> None:
         """Setup experiment logging infrastructure."""
         from games.experiment_logger import ExperimentLogger
@@ -104,7 +146,6 @@ class DeepAgent(BaseAgent):
         torch.nn.utils.clip_grad_norm_(network.parameters(), grad_clip)
 
     def cleanup(self) -> None:
-        print("cleanup called")
         if hasattr(self, 'writer'):
             self.writer.close()
         if hasattr(self, 'env'):
@@ -151,5 +192,32 @@ class DeepAgent(BaseAgent):
             
         return tensor.to(self.device)
 
+    def _save_checkpoint(self, episode: int, networks: Dict[str, nn.Module], 
+                        optimizers: Dict[str, torch.optim.Optimizer],
+                        additional_data: Optional[Dict[str, Any]] = None) -> str:
+        """Save a checkpoint with networks and optimizers."""
+        checkpoint_path = os.path.join(
+            self.experiment_logger.checkpoints_dir, 
+            f"checkpoint_ep_{episode}.pth"
+        )
+        
+        checkpoint_data = {
+            "episode": episode,
+            "config": self.config,
+        }
+        
+        for name, network in networks.items():
+            checkpoint_data[f"{name}_state_dict"] = network.state_dict()
+            
+        for name, optimizer in optimizers.items():
+            checkpoint_data[f"{name}_optimizer"] = optimizer.state_dict()
+            
+        if additional_data:
+            checkpoint_data.update(additional_data)
+        
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        torch.save(checkpoint_data, checkpoint_path)
+        
+        return checkpoint_path
 
         

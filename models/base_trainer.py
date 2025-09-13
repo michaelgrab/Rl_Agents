@@ -2,7 +2,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import os
-import shutil
 from typing import Any, Dict, List, Tuple, Optional
 from abc import abstractmethod
 from .model import DeepAgent
@@ -96,73 +95,6 @@ class BaseTrainer(DeepAgent):
         base_episode_data.update(kwargs)
         self.experiment_logger.log_episode(base_episode_data)
 
-    def save_agent(self, path: str, networks: Dict[str, nn.Module], 
-                   optimizers: Dict[str, torch.optim.Optimizer], 
-                   additional_data: Optional[Dict[str, Any]] = None) -> None:
-        """Common save pattern for all agents."""
-        checkpoint_path = self._save_checkpoint(
-            self.episode, networks, optimizers, additional_data
-        )
-        
-        if path != checkpoint_path:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            shutil.copy2(checkpoint_path, path)
-
-    def _save_checkpoint(self, episode: int, networks: Dict[str, nn.Module], 
-                        optimizers: Dict[str, torch.optim.Optimizer],
-                        additional_data: Optional[Dict[str, Any]] = None) -> str:
-        """Save a checkpoint with networks and optimizers."""
-        checkpoint_path = os.path.join(
-            self.experiment_logger.checkpoints_dir, 
-            f"checkpoint_ep_{episode}.pth"
-        )
-        
-        checkpoint_data = {
-            "episode": episode,
-            "config": self.config,
-        }
-        
-        for name, network in networks.items():
-            checkpoint_data[f"{name}_state_dict"] = network.state_dict()
-            
-        for name, optimizer in optimizers.items():
-            checkpoint_data[f"{name}_optimizer"] = optimizer.state_dict()
-            
-        if additional_data:
-            checkpoint_data.update(additional_data)
-        
-        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-        torch.save(checkpoint_data, checkpoint_path)
-        
-        return checkpoint_path
-
-    def load_agent(self, path: str, network_names: List[str], 
-                   optimizer_names: List[str]) -> Dict[str, Any]:
-        checkpoint = torch.load(path, map_location=self.device)
-        
-        for name in network_names:
-            if hasattr(self, name):
-                network = getattr(self, name)
-                state_dict_key = f"{name}_state_dict"
-                if state_dict_key in checkpoint:
-                    network.load_state_dict(checkpoint[state_dict_key])
-                elif name in checkpoint:
-                    network.load_state_dict(checkpoint[name])
-        
-        for name in optimizer_names:
-            if hasattr(self, name):
-                optimizer = getattr(self, name)
-                optimizer_key = f"{name}_optimizer"
-                if optimizer_key in checkpoint:
-                    optimizer.load_state_dict(checkpoint[optimizer_key])
-                elif name in checkpoint:
-                    optimizer.load_state_dict(checkpoint[name])
-        
-        self.episode = checkpoint.get("episode", 0)
-        if "steps_done" in checkpoint:
-            self.steps_done = checkpoint["steps_done"]
-        
-        return checkpoint
 
     def evaluate_agent(self, num_episodes: int, networks_to_eval: List[nn.Module]) -> Tuple[float, float]:
         """Common evaluation pattern for all agents."""
@@ -240,7 +172,7 @@ class BaseTrainer(DeepAgent):
             render_mode = "human" if render_enabled else None
             self.env = gym.make(env_id, render_mode=render_mode)
             self.is_atari_env = False
-
+    
     @abstractmethod
     def _get_eval_action(self, state) -> int:
         """Get action for evaluation."""
