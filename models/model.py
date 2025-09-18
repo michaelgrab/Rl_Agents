@@ -87,7 +87,7 @@ class DeepAgent(BaseAgent):
     def save_agent(self, path: str, networks: Dict[str, nn.Module], 
                    optimizers: Dict[str, torch.optim.Optimizer], 
                    additional_data: Optional[Dict[str, Any]] = None) -> None:
-        """Common save pattern for all agents. This method is intended to be run inside agent.save() method"""
+        """This method is intended to be run inside agent.save() method. Common save pattern for all agents. """
         checkpoint_path = self._save_checkpoint(
             self.episode, networks, optimizers, additional_data
         )

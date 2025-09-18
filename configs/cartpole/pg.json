@@ -15,7 +15,7 @@
     "use_baseline": true,
     "max_episode_length": 500,
     "gradient_clip": 10.0,
-    "save_every": 100,
+    "save_every": 0,
     "stats_window": 100,
     "experiments_dir": "experiments",
     "render_every": 1

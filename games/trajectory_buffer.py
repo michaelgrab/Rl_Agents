@@ -14,8 +14,9 @@ class TrajectoryBuffer:
         self.length = length
         self.env = env
         self.num_env = env.num_envs
-        self.indicies = np.arange(self.length * self.num_env)
-        self.mb_length = self.length * self.num_env // num_minibatches
+        self.batch_size = self.length * self.num_env
+        self.indicies = np.arange(self.batch_size)
+        self.mb_length = self.batch_size // num_minibatches
         self.observations = torch.zeros((length, self.num_env) + env.single_observation_space.shape).to(device)
         self.actions = torch.zeros((length, self.num_env)).to(device)
         self.rewards = torch.zeros((length, self.num_env)).to(device)
@@ -77,7 +78,7 @@ class TrajectoryBuffer:
         b_values = self.values.reshape(-1)
         # using numpy to randomly shuffle batch indecies
         np.random.shuffle(self.indicies)
-        for start in range(0, self.length, self.mb_length):
+        for start in range(0, self.batch_size, self.mb_length):
             end = start + self.mb_length
             mb_ind = self.indicies[start:end]
             yield b_obs[mb_ind], b_logprobs[mb_ind], b_actions[mb_ind], b_advantages[mb_ind], b_returns[mb_ind], b_values[mb_ind]

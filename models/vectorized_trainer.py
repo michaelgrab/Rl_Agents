@@ -20,6 +20,11 @@ class VectorizedTrainer(DeepAgent):
     def training_loop(self):
         pass
 
+    @abstractmethod
+    def log_debug_data(self):
+        """log episode specific debug data """
+        pass
+
     def train(self) -> None:
         """training in a vectorized environment."""
         # setup variables needed for training
@@ -39,7 +44,7 @@ class VectorizedTrainer(DeepAgent):
 
         self.cleanup()
 
-    def _log_episode_data(self, ep, episode_reward, episode_length):
+    def _log_episode_data(self, ep, global_step, episode_reward, episode_length):
         """log the episode data to wandb"""
         stats_window = int(self.train_cfg.get("stats_window", 100))
         self.recent_rewards.append(episode_reward)
@@ -55,13 +60,15 @@ class VectorizedTrainer(DeepAgent):
         if hasattr(self, 'writer'):
             self.writer.add_scalar("episode/reward", episode_reward, ep)
             self.writer.add_scalar("episode/steps", episode_length, ep)
+            self.writer.add_scalar("global_step/reward", episode_reward, global_step)
+            self.writer.add_scalar("global_step/steps", episode_reward, global_step)
             if hasattr(self, 'rolling_avg'):
                 self.writer.add_scalar("episode/rolling_avg", rolling_avg, ep)
                 self.writer.add_scalar("episode/rolling_std", rolling_std, ep)
 
-    def _log_batch_data(self, ep, loss):
+    def _log_batch_data(self, ep, loss: List[float]):
             if hasattr(self, 'writer'):
-                self.writer.add_scalar("batch/loss", loss, ep)
+                self.writer.add_scalar("episode/avg_loss", np.mean(loss), ep)
 
 
 
@@ -108,11 +115,11 @@ class VectorizedTrainer(DeepAgent):
             step = self.steps_done
             for reward, length in zip(rewards, lengths):
                 self.episode += 1
-                self._print_episode_progress(self.episode, reward, length)
-                self._log_episode_data(self.episode, reward, length)
+                self._print_episode_progress(self.steps_done, reward, length)
+                self._log_episode_data(self.episode, self.steps_done, reward, length)
 
-    def _print_episode_progress(self, episode: int, reward: float, length: int):
+    def _print_episode_progress(self, global_step: int, reward: float, length: int):
         """Print episode progress."""
-        print(f"Ep {episode:4d} | R {reward:8.2f} | steps {length:5d}")
+        print(f"Ep {global_step:4d} | R {reward:8.2f} | steps {length:5d}")
 
 

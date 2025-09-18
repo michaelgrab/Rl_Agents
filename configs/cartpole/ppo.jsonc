@@ -8,24 +8,27 @@
     "render_every": 150 // moved to env config
   },
   "train": {
-    "total_steps": 5000000,
-    "learning_rate": 0.0003,
+    "total_steps": 500000,
+    "learning_rate": 2.5e-4,
     "gamma": 0.99,
     "lambda": 0.95, // for gae
-    "num_steps": 1000, //steps per env executed in one episode
-    "lr_steps": 10, // number of steps in learning phase
+    "num_steps": 128, //steps per env executed in one episode
+    "lr_steps": 4, // number of steps in learning phase
     "clip_coef": 0.2, // the value of clipping coefficent for policy loss
     "ent_coef": 0.01, // entropy bonus coefficent
     "vf_coef": 0.5,   // coefficent of the value function
     "mb_num": 4,  // number of the minibatches
     "value_loss_coeff": 0.5,
     "entropy_coeff": 0.01,
-    "save_every": 100,
+    "adv_norm": true, // advantage normalization
+    "lr_anneal": true,  // learning rate annealig
+    "gradient_clip": 0.5,
+    "save_every": 30,
     "stats_window": 100,
     "experiments_dir": "experiments"
   },
   "model": {
-    "hidden_dim": 128,
+    "hidden_dim": 64,
     "shared_network": true
   }
 }

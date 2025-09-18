@@ -2,7 +2,7 @@ from models.vectorized_trainer import VectorizedTrainer
 from games.trajectory_buffer import TrajectoryBuffer
 from .network import FCNetwork
 
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 import numpy as np
 import os
 import torch
@@ -76,6 +76,15 @@ class PPOAgent(VectorizedTrainer):
         self.network = PPOSeparateFC(self.env).to(self.device)
         lr = self.train_cfg.get("learning_rate", 3e-4)
         self.optimizer = self._setup_optimizer(self.network, lr)
+        # temporary for comparison with cleanrl implementation -----
+        layout = {
+            "Returns": {
+                "return_comparison": ["Multiline", ["global_step/reward", "charts/episodic_return"]],
+            }
+        }
+        self.writer.add_custom_scalars(layout)
+        # to be removed -----
+
 
     
     def get_algorithm_name(self):
@@ -85,12 +94,16 @@ class PPOAgent(VectorizedTrainer):
         next_obs, _ = self.env.reset()
         next_done = np.zeros(self.num_env)
         minibatch_number = self.train_cfg.get("mb_num", 4)
-        self.trajectory_buffer = TrajectoryBuffer(self.num_steps, self.env, minibatch_number, self.device)
         gamma = self.train_cfg.get("gamma", 0.99)
         gae_lambda = self.train_cfg.get("lambda", 0.95)
+        lr = self.train_cfg.get("learning_rate", 3e-4)
+        lr_anneal = self.train_cfg.get("lr_anneal", True)
+        self.trajectory_buffer = TrajectoryBuffer(self.num_steps, self.env, minibatch_number, self.device)
 
         for update in range(self.num_episodes):
-            # here add learning rate annealing
+            # learning rate annealing
+            if lr_anneal:
+                self.anneal_lr(update, self.num_episodes, lr)
             for step in range(self.num_steps):
                 # s_t = s_t+1
                 obs = next_obs
@@ -125,6 +138,11 @@ class PPOAgent(VectorizedTrainer):
         clip_coef = self.train_cfg.get("clip_coef", 0.2)
         ent_coef = self.train_cfg.get("ent_coef", 0.01)
         vf_coef = self.train_cfg.get("vf_coef", 0.5)
+        adv_norm = self.train_cfg.get("adv_norm", True)
+
+        losses = []
+        # the fraction of training data that triggered the clipped objective
+        clipfracts = []
 
         for step in range(lr_steps):
             training_data = self.trajectory_buffer.get_batches()
@@ -134,22 +152,33 @@ class PPOAgent(VectorizedTrainer):
                 logratio = new_logprob - b_logprobs
                 ratio = logratio.exp()
                 
-                # here add advantage normalization
+                with torch.no_grad():
+                    clipfracts+= [((ratio - 1.0).abs() > clip_coef).float().mean().item()]
 
+                # advantage normalization
+                if adv_norm:
+                    b_advantages = self.normalize_adv(b_advantages)
                 # VALUE LOSS
                 v_loss = 0.5 * ((new_value - b_returns) ** 2).mean()
 
                 # POLICY LOSS
                 p_loss_unclipped = -b_advantages * ratio
                 p_loss_clipped = -b_advantages * torch.clamp(ratio, 1 - clip_coef, 1 + clip_coef)
-                p_loss = torch.max(p_loss_unclipped, p_loss_clipped,).mean()
+                p_loss = torch.max(p_loss_unclipped, p_loss_clipped).mean()
 
                 entropy_loss = entropy.mean()
                 loss = p_loss - ent_coef * entropy_loss + vf_coef * v_loss
                 self.optimizer.zero_grad()
+                # calcualte gradients
                 loss.backward()
+                # clipping gradients
+                self._apply_gradient_clipping(self.network)
+
                 self.optimizer.step()
-                self._log_batch_data(self.episode, loss)
+                # record loss value
+                losses.append(loss.item())
+        self._log_batch_data(self.episode, losses)
+        self.log_debug_data(self.optimizer, self.steps_done, v_loss.item(), entropy_loss.item(), p_loss.item(), clipfracts)
 
     def act_and_value(self, state, action: torch.Tensor=None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """select action using current policy, compute the value of the state, compute the entrop
@@ -197,3 +226,20 @@ class PPOAgent(VectorizedTrainer):
 
     def evaluate(self):
         pass
+
+    def normalize_adv(self, adv_tensor: torch.Tensor) -> torch.Tensor:
+        """ normalize advantages """
+        return (adv_tensor - adv_tensor.mean()) / (adv_tensor.std() + 1e-8)
+    
+    def anneal_lr(self, current_step, total_steps, original_lr):
+        frac = 1 - current_step / total_steps
+        new_lr = original_lr * frac
+        self.optimizer.param_groups[0]["lr"] = new_lr
+
+    def log_debug_data(self, optimizer, global_step, v_loss: float, pg_loss: float, entropy_loss: float, clipfracs: List[float]):
+        self.writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
+        self.writer.add_scalar("losses/value_loss", v_loss, global_step)
+        self.writer.add_scalar("losses/policy_loss", pg_loss, global_step)
+        self.writer.add_scalar("losses/entropy", entropy_loss, global_step)
+        self.writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
+
