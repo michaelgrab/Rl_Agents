@@ -162,7 +162,8 @@ class BaseTrainer(DeepAgent):
             self.game = AtariGame(
                 env_id, 
                 self.env_cfg.get("kwargs", {}), 
-                self.env_cfg.get("seed")
+                self.env_cfg.get("" \
+                "")
             )
             self.env = self.game
             self.is_atari_env = True

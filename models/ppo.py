@@ -72,6 +72,7 @@ class PPOSeparateFC(FCNetwork):
 class PPOAgent(VectorizedTrainer):
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
+        self.seed()
         # transfer the network parameters to the device
         self.network = PPOSeparateFC(self.env).to(self.device)
         lr = self.train_cfg.get("learning_rate", 3e-4)
@@ -84,14 +85,15 @@ class PPOAgent(VectorizedTrainer):
         }
         self.writer.add_custom_scalars(layout)
         # to be removed -----
-
-
     
     def get_algorithm_name(self):
         return "ppo"
     
     def training_loop(self):
-        next_obs, _ = self.env.reset()
+        seed = self.env_cfg.get("seed", 1)
+        
+        next_obs, _ = self.env.reset(seed=seed)
+
         next_done = np.zeros(self.num_env)
         minibatch_number = self.train_cfg.get("mb_num", 4)
         gamma = self.train_cfg.get("gamma", 0.99)

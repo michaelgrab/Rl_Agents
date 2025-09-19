@@ -5,6 +5,7 @@
     "kwargs": {},
     "num_env": 4,
     "seed": 42,
+    "torch_deterministic": true, // controls `torch.backends.cudnn.deterministic`
     "render_every": 150 // moved to env config
   },
   "train": {
@@ -22,7 +23,7 @@
     "entropy_coeff": 0.01,
     "adv_norm": true, // advantage normalization
     "lr_anneal": true,  // learning rate annealig
-    "gradient_clip": 0.5,
+    "gradient_clip": 0.5, // max norm for the gradient clipping
     "save_every": 30,
     "stats_window": 100,
     "experiments_dir": "experiments"

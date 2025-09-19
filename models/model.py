@@ -8,6 +8,7 @@ import numpy as np
 import shutil
 
 import os
+import random
 
 class BaseAgent(ABC):
     """
@@ -219,5 +220,13 @@ class DeepAgent(BaseAgent):
         torch.save(checkpoint_data, checkpoint_path)
         
         return checkpoint_path
-
+    
+    def seed(self):
+        """Initialize global random number generation"""
+        seed = self.env_cfg.get("seed", 1)
+        torch_deterministic = self.env_cfg.get("torch_deterministic", True)
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.backends.cudnn.deterministic = torch_deterministic
         

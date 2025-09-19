@@ -9,6 +9,7 @@ from .model import DeepAgent
 import numpy as np
 
 
+
 class VectorizedTrainer(DeepAgent):
     """
     Base trainer class for the vectorized environments
@@ -121,5 +122,3 @@ class VectorizedTrainer(DeepAgent):
     def _print_episode_progress(self, global_step: int, reward: float, length: int):
         """Print episode progress."""
         print(f"Ep {global_step:4d} | R {reward:8.2f} | steps {length:5d}")
-
-
