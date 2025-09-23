@@ -24,12 +24,15 @@
     "adv_norm": true, // advantage normalization
     "lr_anneal": true,  // learning rate annealig
     "gradient_clip": 0.5, // max norm for the gradient clipping
-    "save_every": 30,
+    "adam_eps": 1e-5,
+    "save_every": 10,
     "stats_window": 100,
     "experiments_dir": "experiments"
   },
   "model": {
     "hidden_dim": 64,
-    "shared_network": true
+    "shared_network": true,
+    "debug_mode": true,
+    "record_stats": true
   }
 }

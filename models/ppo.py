@@ -67,23 +67,62 @@ class PPOSeparateFC(FCNetwork):
             nn.init.constant_(m.bias, 0)
             nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
         nn.init.orthogonal_(self.value_network[-1].weight)        
-        nn.init.constant_(self.value_network[-1].bias, 0)        
+        nn.init.constant_(self.value_network[-1].bias, 0)
+
+# Network from cleanrl for debug purpose --- 
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+class Agent(nn.Module):
+    def __init__(self, envs):
+        super().__init__()
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
+        )
+        self.actor = nn.Sequential(
+            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01),
+        )
+
+    def get_value(self, x):
+        return self.critic(x)
+
+    def get_action_and_value(self, x, action=None):
+        logits = self.actor(x)
+        probs = Categorical(logits=logits)
+        if action is None:
+            action = probs.sample()
+        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
+# ---
 
 class PPOAgent(VectorizedTrainer):
     def __init__(self, config: Dict[str, Any]) -> None:
         super().__init__(config)
         self.seed()
         # transfer the network parameters to the device
-        self.network = PPOSeparateFC(self.env).to(self.device)
+        if self.model_cfg.get("debug_mode", False):
+            self.network = Agent(self.env).to(self.device)    
+        else:
+            self.network = PPOSeparateFC(self.env).to(self.device)
         lr = self.train_cfg.get("learning_rate", 3e-4)
-        self.optimizer = self._setup_optimizer(self.network, lr)
+        self.optimizer = self._setup_optimizer(self.network, lr, eps=1e-5)
         # temporary for comparison with cleanrl implementation -----
-        layout = {
-            "Returns": {
-                "return_comparison": ["Multiline", ["global_step/reward", "charts/episodic_return"]],
+        if not self.record_stats:
+            layout = {
+                "Returns": {
+                    "return_comparison": ["Multiline", ["global_step/reward", "charts/episodic_return"]],
+                }
             }
-        }
-        self.writer.add_custom_scalars(layout)
+            self.writer.add_custom_scalars(layout)
         # to be removed -----
     
     def get_algorithm_name(self):
@@ -111,7 +150,13 @@ class PPOAgent(VectorizedTrainer):
                 obs = next_obs
                 done = next_done
                 with torch.no_grad():
-                    action, logprob, value, _ = self.act_and_value(obs) 
+                    if self.debug_mode:
+                        obs_tensor = torch.Tensor(obs).to(self.device)
+                        self.seed()
+                        action, logprob, _, value = self.network.get_action_and_value(obs_tensor)
+                        value = value.flatten()
+                    else:
+                        action, logprob, value, _ = self.act_and_value(obs) 
                 next_obs, reward, next_terminated, next_truncated, info = self.env.step(action.cpu().numpy())
                 next_done = np.logical_or(next_terminated, next_truncated)
 
@@ -122,13 +167,15 @@ class PPOAgent(VectorizedTrainer):
                 self.steps_done += self.num_env
             with torch.no_grad():
                 next_value = self.get_value(next_obs)
+                if self.debug_mode:
+                    next_value = next_value.reshape(1, -1)
 
             # LEARNING PHASE
             # Generalized advantage estimation
             self.trajectory_buffer.gae_estimation(gamma, gae_lambda, next_value, next_done)
             self.optimize()
             # saving model weights
-            if self.save_every and update > 0 and update % self.save_every == 0:
+            if self.save_every and update > 0 and update % self.save_every == 0 and not self.debug_mode:
                 checkpoint_path = os.path.join(
                     self.experiment_logger.checkpoints_dir, 
                     f"checkpoint_ep_{self.episode}.pth"
@@ -149,19 +196,38 @@ class PPOAgent(VectorizedTrainer):
         for step in range(lr_steps):
             training_data = self.trajectory_buffer.get_batches()
             for b_obs, b_logprobs, b_actions, b_advantages, b_returns, b_values in training_data:
-                _, new_logprob, new_value, entropy = self.act_and_value(b_obs, b_actions)
+                if self.debug_mode:
+                    _, new_logprob, entropy, new_value = self.network.get_action_and_value(b_obs, b_actions)
+                    new_value = new_value.view(-1)
+                else:
+                    _, new_logprob, new_value, entropy = self.act_and_value(b_obs, b_actions)
                 # CALCULATE PROBABILITY RATIO
                 logratio = new_logprob - b_logprobs
                 ratio = logratio.exp()
                 
                 with torch.no_grad():
                     clipfracts+= [((ratio - 1.0).abs() > clip_coef).float().mean().item()]
+                    old_approx_kl = (-logratio).mean()
+                    approx_kl = ((ratio - 1) - logratio).mean()
+                    
 
                 # advantage normalization
                 if adv_norm:
                     b_advantages = self.normalize_adv(b_advantages)
                 # VALUE LOSS
-                v_loss = 0.5 * ((new_value - b_returns) ** 2).mean()
+
+                if self.train_cfg.get("clip_vloss", True):
+                    v_loss_unclipped = (new_value - b_returns) ** 2
+                    v_clipped = b_values + torch.clamp(
+                        new_value - b_values,
+                        -clip_coef,
+                        clip_coef,
+                    )
+                    v_loss_clipped = (v_clipped - b_returns) ** 2
+                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                    v_loss = 0.5 * v_loss_max.mean()
+                else:    
+                    v_loss = 0.5 * ((new_value - b_returns) ** 2).mean()
 
                 # POLICY LOSS
                 p_loss_unclipped = -b_advantages * ratio
@@ -179,8 +245,9 @@ class PPOAgent(VectorizedTrainer):
                 self.optimizer.step()
                 # record loss value
                 losses.append(loss.item())
-        self._log_batch_data(self.episode, losses)
-        self.log_debug_data(self.optimizer, self.steps_done, v_loss.item(), entropy_loss.item(), p_loss.item(), clipfracts)
+        if self.record_stats:
+            self._log_batch_data(self.episode, losses)
+            self.log_debug_data(self.optimizer, self.steps_done, v_loss.item(), p_loss.item(), entropy_loss.item(), clipfracts, old_approx_kl.item(), approx_kl.item())
 
     def act_and_value(self, state, action: torch.Tensor=None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """select action using current policy, compute the value of the state, compute the entrop
@@ -238,10 +305,21 @@ class PPOAgent(VectorizedTrainer):
         new_lr = original_lr * frac
         self.optimizer.param_groups[0]["lr"] = new_lr
 
-    def log_debug_data(self, optimizer, global_step, v_loss: float, pg_loss: float, entropy_loss: float, clipfracs: List[float]):
+    def log_debug_data(self,
+                        optimizer,
+                        global_step, 
+                        v_loss: float,
+                        pg_loss: float,
+                        entropy_loss: float,
+                        clipfracs: List[float],
+                        old_approx_kl: float,
+                        approx_kl: float
+                    ):
         self.writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         self.writer.add_scalar("losses/value_loss", v_loss, global_step)
         self.writer.add_scalar("losses/policy_loss", pg_loss, global_step)
         self.writer.add_scalar("losses/entropy", entropy_loss, global_step)
         self.writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
+        self.writer.add_scalar("losses/old_approx_kl", old_approx_kl, global_step)
+        self.writer.add_scalar("losses/approx_kl", approx_kl, global_step)
 

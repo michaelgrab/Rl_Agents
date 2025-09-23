@@ -53,9 +53,11 @@ class DeepAgent(BaseAgent):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.gamma = self.train_cfg.get("gamma", 0.99)
         self.episode = 0
-
-        experiment_name = f"{self.get_algorithm_name()}_{self.env_cfg['id']}"
-        self._setup_experiment_logging(experiment_name)
+        self.debug_mode = self.model_cfg.get("debug_mode", False)
+        self.record_stats = self.model_cfg.get("record_stats", True)
+        if self.record_stats:
+            experiment_name = f"{self.get_algorithm_name()}_{self.env_cfg['id']}"
+            self._setup_experiment_logging(experiment_name)
 
         self._setup_environment()
 
@@ -161,7 +163,7 @@ class DeepAgent(BaseAgent):
             print(f"Log dir: {self.writer.log_dir}")
         print("=" * 60)
 
-    def _setup_optimizer(self, network: nn.Module, lr: Optional[float] = None) -> torch.optim.Optimizer:
+    def _setup_optimizer(self, network: nn.Module, lr: Optional[float] = None, eps: Optional[float] = None) -> torch.optim.Optimizer:
         """Setup optimizer for the given network."""
         if lr is None:
             lr = self.train_cfg.get("learning_rate", 2.5e-4)
@@ -179,7 +181,9 @@ class DeepAgent(BaseAgent):
                 eps=eps
             )
         else:
-            return optim.Adam(network.parameters(), lr=lr)    
+            if eps is None:
+                eps = self.train_cfg("adam_eps", 1e-8)        
+            return optim.Adam(network.parameters(), lr=lr, eps=eps)    
         
     def _to_tensor(self, data, dtype=None) -> torch.Tensor:
         """Convert numpy array or list to tensor on correct device."""
@@ -229,4 +233,8 @@ class DeepAgent(BaseAgent):
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.backends.cudnn.deterministic = torch_deterministic
+        # looking for the source of non-determinism in my code
+        torch.use_deterministic_algorithms(True)
+        # ---
+
         

@@ -79,7 +79,10 @@ class VectorizedTrainer(DeepAgent):
         env_id = self.env_cfg["id"]   
         render_every = self.env_cfg.get("render_every", 0)
         capture_video = render_every > 0
-        video_dir = os.path.join(self.experiment_logger.experiment_dir, "video")     
+        if not self.record_stats:
+            capture_video = False
+        else:       
+            video_dir = os.path.join(self.experiment_logger.experiment_dir, "video")
         self.num_env = self.env_cfg["num_env"]
 
         if self.num_env < 1:
@@ -117,7 +120,8 @@ class VectorizedTrainer(DeepAgent):
             for reward, length in zip(rewards, lengths):
                 self.episode += 1
                 self._print_episode_progress(self.steps_done, reward, length)
-                self._log_episode_data(self.episode, self.steps_done, reward, length)
+                if self.record_stats:
+                    self._log_episode_data(self.episode, self.steps_done, reward, length)
 
     def _print_episode_progress(self, global_step: int, reward: float, length: int):
         """Print episode progress."""

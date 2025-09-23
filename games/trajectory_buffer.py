@@ -51,7 +51,7 @@ class TrajectoryBuffer:
 
                 delta = self.rewards[t] + gamma * bootstrap_value * termination_mask - self.values[t]
                 self.advantages[t] = lastgae = delta + gamma * gae_lambda * termination_mask * lastgae
-        self.returns = self.advantages + self.values 
+            self.returns = self.advantages + self.values 
 
     def _to_tensor(self, data, dtype=None) -> torch.Tensor:
         """Convert numpy array or list to tensor on correct device."""
